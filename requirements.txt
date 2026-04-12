@@ -3,7 +3,8 @@ langchain
 langchain-core
 langchain-community
 langchain-huggingface
-pinecone-client
+pinecone
+langchain-pinecone
 python-dotenv
 sentence-transformers
 
