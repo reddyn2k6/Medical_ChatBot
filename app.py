@@ -1,53 +1,49 @@
-from flask import Flask, render_template, jsonify, request
+import streamlit as st
+import os
 from src.helper import get_embedding_model
 from langchain_pinecone import PineconeVectorStore
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_huggingface import ChatHuggingFace,HuggingFaceEndpoint
-from dotenv import load_dotenv
-from src.prompt import *
-import os
+from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
 
+# Title
+st.title("Medical Chatbot 🧠")
 
-app = Flask(__name__)
+# Load API keys (from Streamlit secrets later)
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+HUGGINGFACEHUB_ACCESS_TOKEN = os.getenv("HUGGINGFACEHUB_ACCESS_TOKEN")
 
-
-load_dotenv()
-
-PINECONE_API_KEY=os.environ.get('PINECONE_API_KEY')
-HUGGINGFACEHUB_ACCESS_TOKEN=os.environ.get('HUGGINGFACEHUB_ACCESS_TOKEN')
-
-os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
-os.environ["HUGGINGFACEHUB_ACCESS_TOKEN"] = HUGGINGFACEHUB_ACCESS_TOKEN
-
-
+# Load embeddings + vector store
 embeddings = get_embedding_model()
 
-index_name = "medical-chatbot" 
-# Embed each chunk and upsert the embeddings into your Pinecone index.
 docsearch = PineconeVectorStore.from_existing_index(
-    index_name=index_name,
+    index_name="medical-chatbot",
     embedding=embeddings
 )
 
+retriever = docsearch.as_retriever(search_kwargs={"k": 3})
 
-
-
-retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k":3})
-
-llm=HuggingFaceEndpoint(
+# Load model
+llm = HuggingFaceEndpoint(
     repo_id="meta-llama/Llama-3.1-8B-Instruct",
-    huggingfacehub_api_token=os.getenv("HUGGINGFACEHUB_ACCESS_TOKEN")
+    huggingfacehub_api_token=HUGGINGFACEHUB_ACCESS_TOKEN
 )
 
-model=ChatHuggingFace(llm=llm)
+model = ChatHuggingFace(llm=llm)
 
-prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", system_prompt),
-        ("human", "{input}"),
-    ]
-)
+# Prompt
+system_prompt = """
+You are a medical assistant.
+Answer strictly based on the context.
+
+Context:
+{context}
+"""
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", system_prompt),
+    ("human", "{input}")
+])
 
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
@@ -61,27 +57,10 @@ chain = (
     | model
 )
 
+# User input
+user_input = st.text_input("Ask a question:")
 
-
-@app.route("/")
-def index():
-    return render_template('chat.html')
-
-
-
-@app.route("/get", methods=["GET", "POST"])
-def chat():
-    msg = request.form["msg"]
-    input = msg
-    print(input)
-    response = chain.invoke( msg)
-    print("Response : ", response.content)
-    return str(response.content)
-
-
-
-if __name__ == '__main__':
-    app.run()
-
-
-    
+if user_input:
+    with st.spinner("Thinking..."):
+        response = chain.invoke(user_input)
+        st.write(response.content)
